@@ -46,7 +46,9 @@ request_url = api.create_service_url('s3', 'ListBuckets', region='ap-southeast-2
 
 ```
 
-To a large extent you do need to know the AWS API to be able to use this in a useful way, although I have provided some of the examples I have personally tested below.  You can largely start from [here](https://docs.aws.amazon.com/index.html), find the service you want, and take what would normally be sent in a POST request for a particular API call and supply it JSON encoded to the `parameters` option, and it _SHOULD_ work.
+To a large extent you do need to know the AWS API to be able to use this in a useful way, although I have provided some of the examples I have personally tested below.  To some extent you can use it in a similar way to the [AWS cli](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/index.html), but the parameter format will be different in a number of cases, so you can combine it with the general API documentation [here](https://docs.aws.amazon.com/index.html). Find the service you want, and take what would normally be sent in a POST request for a particular API call and supply it JSON encoded to the `parameters` option, and it _SHOULD_ work.
+
+
 
 
 # Warning 
