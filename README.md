@@ -4,12 +4,13 @@ POC tool to create signed AWS API GET requests to bypass Guard Duty alerting of 
 
 # What?
 
-AWS has a Guard Duty alert to advise when an AWS instance credential is used outside of the instance itself. This will give you a heads up when the instance credentials are stolen using a vulnerability like a Server Side Request Forgery (SSRF) from the Metadata URL.
+AWS has a Guard Duty alert to advise when an AWS instance credential is used outside of the instance itself. This will give you as the account owner a heads up when the instance credentials are stolen using a vulnerability like a Server Side Request Forgery (SSRF) from the Metadata URL and then subsequently used.
 
-This alerting relies on the instance credential being taken off the host and then used to make an AWS API query from a host that is not in the associated AWS account. This is a common circumstance when instance credentials are comprimised via SSRF - attacker gets the instance creds from the metadata service on a vulnerable EC2 host, configures those credentials locally on their own local host, and then calls the AWS API to try and further compromise the AWS account.
+This alerting relies on the instance credential being taken off the host and then used to make an AWS API query from a host that is not in the associated AWS account. This is a common circumstance when instance credentials are comprimised via SSRF - attacker gets the instance creds from the metadata service on a vulnerable EC2 host, configures those credentials locally on their own local host, and then calls the AWS API to try and further compromise the AWS account.  
 
 Even though its not obviously exposed in the various client libraries in any way other than for S3 however, it is possible to make general requests of the AWS API using HTTP GET requests. This allows you to create signed URLs to query the AWS API, send them via the same mechanism by which you compromised the credentials in the first place (e.g. SSRF), and bypass the Guard Duty alerting. This is because AWS API calls made in this way are not being made outside of the AWS account owning the credential - from the perspective of the API server they are coming from the same EC2 instance that owns that credential.
 
+There is [another approach](https://github.com/Frichetten/SneakyEndpoints) available to also bypass these alerts, but this way requires much less infrastructure and setup, but potentially more effort in getting the results/information you are after from time of making first request.
 
 
 # Usage
