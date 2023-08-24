@@ -6,11 +6,11 @@ POC tool to create signed AWS API GET requests to bypass Guard Duty alerting of 
 
 AWS has a Guard Duty alert to advise when an AWS instance credential is used outside of the instance itself. This will give you as the account owner a heads up when the instance credentials are stolen using a vulnerability like a Server Side Request Forgery (SSRF) from the Metadata URL and then subsequently used.
 
-This alerting relies on the instance credential being taken off the host and then used to make an AWS API query from a host that is not in the associated AWS account. This is a common circumstance when instance credentials are comprimised via SSRF - attacker gets the instance creds from the metadata service on a vulnerable EC2 host, configures those credentials locally on their own local host, and then calls the AWS API to try and further compromise the AWS account.  
+This alerting relies on the instance credential being taken off the owning host and then used to make an AWS API query from a machine that is not in the associated AWS account. This is a common circumstance when instance credentials are comprimised via SSRF - attacker gets the instance creds from the metadata service on a vulnerable EC2 host, configures those credentials locally on their own local machine, and then calls the AWS API from there to try and further compromise the associated AWS account.  
 
-Even though its not obviously exposed in the various client libraries in any way other than for S3 however, it is possible to make general requests of the AWS API using HTTP GET requests. This allows you to create signed URLs to query the AWS API, send them via the same mechanism by which you compromised the credentials in the first place (e.g. SSRF), and bypass the Guard Duty alerting. This is because AWS API calls made in this way are not being made outside of the AWS account owning the credential - from the perspective of the API server they are coming from the same EC2 instance that owns that credential.
+Even though its not obviously exposed in the various client libraries (except for S3 signed URLs) however, it is possible to make general requests of the AWS API using HTTP GET requests. This approach enables you to create signed URLs to query the AWS API, send them via the same mechanism by which you compromised the credentials in the first place (e.g. SSRF), and bypass the Guard Duty alerting. This is because AWS API calls made in this way are not being made outside of the AWS account owning the credential - because you make the API call by sending the URL through the SSRF, from the perspective of the API server they are coming from the same EC2 instance that owns that credential.
 
-There is [another approach](https://github.com/Frichetten/SneakyEndpoints) available to also bypass these alerts, but this way requires much less infrastructure and setup, but potentially more effort in getting the results/information you are after from time of making first request.
+There is [another approach](https://github.com/Frichetten/SneakyEndpoints) available to also bypass these alerts, but in comparison this method requires much less infrastructure and setup and can support more services. As a downside however, this approach prevents you from being able to use existing offensive tools that work with compromised credentials, requires a potentially greater understanding of the AWS API, and may be limited by the retrieval capabilities of the SSRF used.
 
 
 # Usage
@@ -53,7 +53,7 @@ To a large extent you do need to know the AWS API to be able to use this in a us
 
 # Warning 
 
-This is a signed https URL that can perform AWS API calls as the compromised user. Standard warnings for leaving the URL where others can see it or having it leaked in logs or other intermediate devices applies. The URLs do timeout after a default period of 180 seconds, so the URLs do have a limited lifetime.
+This is a signed https URL that can perform AWS API calls as the compromised user. Standard warnings for leaving the URL where others can see it or having it leaked in logs or other intermediate devices applies. The URLs do expire after a default period of 180 seconds, so there is a limit to how long after they are generated they can be used.
 
 
 # Alpha code
@@ -62,9 +62,9 @@ This should be considered Alpha quality code.
 
 At the time of writing there are 313 services currently supported in the AWS API - I have only tested a small fraction of them that I personally needed to prove impact of SSRF related vulnerabilities.
 
-While the signing process is meant to be standard across the services, there are differences in where regional endpoints sit, and the specific nature of the signed payload and signing process for some services. This could mean that some services I have not specifically tested may not work, but I think many probably will.
+While the AWS v4 API signing process is more or less standard across the various supported services, there are differences in where regional endpoints sit, and the specific nature of the signed payload and signing process for some services. This could mean that some services I have not specifically tested may not work, but I think many probably will.
 
-The process by which more complex parameter structures are converted into GET compatible versions is also weird. Its possible my code to convert parameters from a standard JSON compatible format is wrong or incomplete, and this will only become clear once someone tries to send parameters more complex than the SSM code execution example above.
+The process by which more complex parameter structures are converted into GET compatible versions is also rather unique. It's possible my code to convert parameters from a standard JSON compatible format is wrong or incomplete, and this will only become clear once someone tries to send parameters more complex than the SSM code execution example above.
 
 Feel free to raise issues or PRs if you find any problems.
 
