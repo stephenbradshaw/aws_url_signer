@@ -4,7 +4,7 @@ POC tool to create signed AWS API GET requests to bypass Guard Duty alerting of 
 
 # What?
 
-AWS has a Guard Duty alert to advise when an AWS instance credential is used outside of the instance itself. This will give you as the account owner a heads up when the instance credentials are stolen using a vulnerability like a Server Side Request Forgery (SSRF) from the Metadata URL and then subsequently used.
+AWS has a Guard Duty alert to advise when an AWS instance credential is used outside of the instance itself. This will give you as the account owner a heads up when the instance credentials are stolen using a vulnerability like a Server Side Request Forgery (SSRF) from the Metadata URL and then subsequently used from the attackers system.
 
 This alerting relies on the instance credential being taken off the owning host and then used to make an AWS API query from a machine that is not in the associated AWS account. This is a common circumstance when instance credentials are comprimised via SSRF - attacker gets the instance creds from the metadata service on a vulnerable EC2 host, configures those credentials locally on their own local machine, and then calls the AWS API from there to try and further compromise the associated AWS account.  
 
