@@ -68,14 +68,27 @@ class AWSApiUrlGenerator:
         self.session_token = session_token
         self.link_expiry = link_expiry
         self.sv = self.get_service_versions()
-        # put service in region_bound list if <service>.amazonaws.com for service will not work for us-east-1
-        # put service in non_canonical_token list if the session token is NOT used in signature calculation
-        # default_version is the mandatory API version string for the service
-        self.region_bound_services = [
-            'ssm'
+        # some APIs use a "legacy" GET based format for API calls
+        # list these services here
+        self.legacy_url_format_services = [
+            'cloudfront',
+            'route53'
         ]
+        # services with no regional endpoints here
+        # https://docs.aws.amazon.com/general/latest/gr/rande.html
+        self.region_free_services = [
+            'cloudfront', # Amazon CloudFront
+            'globalaccelerator', # AWS Global Accelerator
+            'iam', # AWS Identity and Access Management (IAM)
+            'networkmanager', # AWS Network Manager
+            'organizations', # AWS Organizations
+            'route53', # Amazon Route 53
+            'shield', # AWS Shield Advanced - shield.us-east-1.amazonaws.com
+            'waf', # AWS WAF Classic
+        ]
+        # put service in non_canonical_token list if the session token is NOT used in signature calculation
         self.non_canonical_token_services = []
-        self.service_info = {a : {'default_version': self.sv[a], 'canonical_token': a not in self.non_canonical_token_services, 'region_bound': a in self.region_bound_services} for a in self.sv.keys()}
+        self.service_info = {a : {'default_version': self.sv[a], 'canonical_token': a not in self.non_canonical_token_services, 'region_free': a in self.region_free_services} for a in self.sv.keys()}
         if logger:
             self.logger = logger 
         else:
@@ -125,10 +138,11 @@ class AWSApiUrlGenerator:
 
     def get_host_for_region(self, service: str, region: str) -> str:
         '''Get the API host for the AWS API service based on the selected region'''
-        if service in self.service_info and self.service_info[service].get('region_bound'):
-            return '{}.{}.amazonaws.com'.format(service, region)
+        if service in self.region_free_services or not region:
+            return '{}.amazonaws.com'.format(service)
         else:
-            return '{}.amazonaws.com'.format(service) if region == 'us-east-1' else '{}.{}.amazonaws.com'.format(service, region)
+            return '{}.{}.amazonaws.com'.format(service, region)
+
 
 
     # Key derivation functions. See:
@@ -146,14 +160,16 @@ class AWSApiUrlGenerator:
         return kSigning
 
 
-    #When you add the X-Amz-Security-Token parameter to the query string, some services require that you include this parameter in the canonical (signed) request.
+    # When you add the X-Amz-Security-Token parameter to the query string, some services require that you include this parameter in the canonical (signed) request.
     # For other services, you add this parameter at the end, after you calculate the signature. For details, see the API reference documentation for that service.
-    def create_aws_api_url(self, service: str, parameters: dict, host: str, region: str, endpoint: str, canonical_token: bool=True) -> str:
+    def create_aws_api_url(self, service: str, parameters: dict, host: str, region: str, endpoint: str, canonical_token: bool=True, path_parameters: list=[]) -> str:
         '''Create a signed URL for a given API endpoint host'''
         t = datetime.datetime.utcnow()
         amz_date = t.strftime('%Y%m%dT%H%M%SZ') # Format date as YYYYMMDD'T'HHMMSS'Z'
         datestamp = t.strftime('%Y%m%d') # Date w/o time, used in credential scope
         algorithm = 'AWS4-HMAC-SHA256'
+        if not region:
+            region = 'us-east-1'
         credential_scope = datestamp + '/' + region + '/' + service + '/' + 'aws4_request'
         params = {
             'X-Amz-Algorithm': algorithm,
@@ -162,6 +178,15 @@ class AWSApiUrlGenerator:
             'X-Amz-Expires' : self.link_expiry,
             'X-Amz-SignedHeaders': 'host'
         }
+
+        base_url = '/'
+
+        if service in self.legacy_url_format_services:
+            version = parameters.pop('Version')
+            action = parameters.pop('Action')
+            base_url += '{}/{}'.format(version, action)
+            if path_parameters:
+                base_url += '/{}'.format('/'.join(path_parameters))
 
         if self.session_token and canonical_token:
             params['X-Amz-Security-Token'] = urllib.parse.quote_plus(self.session_token)
@@ -178,7 +203,7 @@ class AWSApiUrlGenerator:
         else:
             payload_hash = 'UNSIGNED-PAYLOAD' # yudodis - s3 special for some reason
 
-        canonical_request = 'GET\n{}\n{}\nhost:{}\n\nhost\n{}'.format('/', canonical_querystring, host, payload_hash)
+        canonical_request = 'GET\n{}\n{}\nhost:{}\n\nhost\n{}'.format(base_url, canonical_querystring, host, payload_hash)
         string_to_sign = '\n'.join([algorithm, amz_date, credential_scope, hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()])
 
         sep = '=========='
@@ -193,10 +218,10 @@ class AWSApiUrlGenerator:
         if self.session_token and not canonical_token:
             canonical_querystring += '&X-Amz-Security-Token=' + urllib.parse.quote_plus(self.session_token)
 
-        return endpoint + "/?" + canonical_querystring
+        return endpoint + base_url + "?" + canonical_querystring
 
 
-    def create_service_url(self, service: str, action: str, parameters: dict={}, region: str='us-east-1', version: str=None, canonical_token: bool=None) -> str:
+    def create_service_url(self, service: str, action: str, parameters: dict={}, region: str='', version: str=None, canonical_token: bool=None, path_parameters: list=[]) -> str:
         '''External interface for creating a signed GET URL for a given API call'''
         host = self.get_host_for_region(service, region)
         version = version if version else self.service_info[service].get('default_version') if service in self.service_info else None
@@ -207,7 +232,7 @@ class AWSApiUrlGenerator:
         elif service in self.service_info and 'canonical_token' in self.service_info[service]:
             canonical_token = self.service_info[service]['canonical_token']
         default_params = {'Action': action, 'Version': version}
-        return self.create_aws_api_url(service, {**default_params, **parameters} , host, region, 'https://{}'.format(host), canonical_token)
+        return self.create_aws_api_url(service, {**default_params, **parameters} , host, region, 'https://{}'.format(host), canonical_token=canonical_token, path_parameters=path_parameters)
 
 
 def command_line():
@@ -215,8 +240,9 @@ def command_line():
     input_arg_group = parser.add_argument_group('API Operation')
     input_arg_group.add_argument('-service', type=str, required=True, help='AWS service for the API call')
     input_arg_group.add_argument('-action', type=str, required=True, help='AWS action for the API call')
-    input_arg_group.add_argument('-region', type=str, default='us-east-1', help='AWS region for operation')
+    input_arg_group.add_argument('-region', type=str, default='', help='AWS region for operation')
     input_arg_group.add_argument('-parameters', type=str, default='{}', help='AWS parameters for the API call, JSON encoded')
+    input_arg_group.add_argument('-path-parameters', type=str, default='', help='Ordered list of legacy API "path" parameters, comma separated')
 
     output_arg_group = parser.add_argument_group('Output')
     output_arg_group.add_argument('-link-expiry', type=int, default=180, help='Link expiry time in seconds - default 180')
@@ -250,6 +276,10 @@ def command_line():
         parser.print_help()
         sys.exit()
 
+    path_parameters = []
+    if args.path_parameters:
+        path_parameters = args.path_parameters.split(',')
+
     api = AWSApiUrlGenerator(access_key, secret_key, session_token, link_expiry=args.link_expiry, logger=logger)
 
     service = args.service
@@ -264,8 +294,7 @@ def command_line():
         print(e)
         sys.exit(1)
 
-
-    request_url = api.create_service_url(service, action, region=region, parameters=parameters)
+    request_url = api.create_service_url(service, action, region=region, parameters=parameters, path_parameters=path_parameters)
 
     print(request_url)
     

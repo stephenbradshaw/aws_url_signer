@@ -49,11 +49,60 @@ request_url = api.create_service_url('s3', 'ListBuckets', region='ap-southeast-2
 To a large extent you do need to know the AWS API to be able to use this in a useful way, although I have provided some of the examples I have personally tested below.  To some extent you can use it in a similar way to the [AWS cli](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/index.html), but the parameter format will be different in a number of cases, so you can combine it with the general API documentation [here](https://docs.aws.amazon.com/index.html). Find the service you want, and take what would normally be sent in a POST request for a particular API call and supply it JSON encoded to the `parameters` option, and it _SHOULD_ work.
 
 
+# "Legacy" APIs
+
+Some of the AWS API endpoints such as Route53 and CloudFront are using what I'm referring to as a "legacy" API calling format, which is different from the approach used by a lot of other AWS APIs, and hence results in a different looking URL. 
+
+To explain by example, lets look at the [ListDistributions](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ListDistributions.html) action for CloudFront.
+
+According to the documentation, tt uses a syntax like so.
+```
+GET /2020-05-31/distribution?Marker=Marker&MaxItems=MaxItems HTTP/1.1
+```
+
+In this case, the API version `2020-05-31` is included as a path parameter in the URL, instead of a query parameter where it is for most other calls, and the action of `ListDistributions` is no where to be found. Instead there is a path parameter of `distribution` immediately following the version which is serving as the action.
+
+I have added edge case code for the services Im aware of that use this calling convention into the tool. You can create a signed URL for this particular call like so - using the value of the **path** parameter immediately following the version as your `action`. The API version will be automatically extracted from botocore and filled in by the tool.
+
+```
+./aws_url_signer.py -environment -service cloudfront -action distribution
+```
+
+The calling convention here also uses optional query parameters `Marker` and `MaxItems`. The `parameters` command line option of the tool can be used as with the other non legacy calling convention to specify these.
+
+
+For API calls following this approach that use additional **path** parameters **after** the one immediately following the version, I have added a `path-parameters` command line option you can use to provide these. It takes an **ordered** comma seperated list of path parameter values to add to the URL.
+
+Take [GetDistribution](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_GetDistribution.html) as an example. It provides the `ID` of the distribution to retrieve as a path parameter immediately following the **"action"** of `distribution`.
+
+```
+GET /2020-05-31/distribution/<Id> HTTP/1.1
+```
+
+If I wanted to call this using `E1XXXXXXXXXXXX` as the ID value, I would call the tool like so:
+
+```
+./aws_url_signer.py -environment -service cloudfront -action distribution -path-parameters E1XXXXXXXXXXXX
+```
+
+As another example, imagine a theoretical API call with action `whatever` with two **ordered** URL **path** parameters `param1` and `param2`.
+
+```
+GET /2020-05-31/whatever/<param1>/<param2> HTTP/1.1
+```
+
+This would be called like so:
+
+```
+./aws_url_signer.py -environment -service cloudfront -action whatever -path-parameters param1,param2
+```
+
+So far Ive only added code for the Route53 and CloudFront services to allow for this "legacy" calling convention, if you find any others that do this that Ive missed then please raise an Issue or PR (services using this convention are in a list in the constructor of the API object).
 
 
 # Warning 
 
-This is a signed https URL that can perform AWS API calls as the compromised user. Standard warnings for leaving the URL where others can see it or having it leaked in logs or other intermediate devices applies. The URLs do expire after a default period of 180 seconds, so there is a limit to how long after they are generated they can be used.
+This tool creates a signed https URL that can perform AWS API calls as the compromised user. Standard warnings apply for leaving the URL where others can see it or having it leaked in logs or other intermediate devices. The URLs do timeout after a default period of 180 seconds, so the URLs do have a limited lifetime.
 
 
 # Alpha code
